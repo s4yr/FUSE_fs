@@ -26,30 +26,11 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
-
 char name1[10] = "/file";	
 char name2[10];
+static int savefd;
 char* intToChar(char* bufer, int numb);
-struct mbr_partition
-{
-  struct mbr_table {
-    uint8_t boot;
-    uint8_t start_chs[3];
-    uint8_t type;
-    uint8_t end_chs[3];
-    uint32_t offset;
-    uint32_t length;
-  } table;
-
-  off_t offset;
-  off_t length;
-
-  struct mbr_partition *next;
-  struct mbr_partition *sub;
-
-  bool mounted;
-};
-
+static struct fuse_session* se;
 struct mbr_data
 {
   int fd;
@@ -57,121 +38,113 @@ struct mbr_data
   char *filename;
  // struct mbr_partition *primary;
 };
-struct BLOCKS
+static inline char* fixpath(const char* path)
 {
-	char data[256];
-	struct BLOCKS* next_block;
-	struct BLOCKS* prev_block;
-};
-struct NODES
-{
-	int type;
-	int link_count;
-	int lenght;
-	size_t block_size;
-	struct BLOCKS* blocks;
-};
-struct pr_data_record
-{
-	int fd;
-	char filename[15];
-	struct NODES* inode;
-};
-static int pr_getattr(const char* path,struct stat* st_buf)	//get attributes about file/directory
+    char* fixed=(char*)calloc(strlen(path)+2,sizeof(char));
+
+    strcpy(fixed,".");
+    strcat(fixed,path);
+    return fixed;
+}
+
+static int pr_getattr(const char* path,struct stat* st_buf)		//get attributes about file/directory
 {
 	int res = 0;	//temporary result
-	struct pr_data_record rec;
-	rec.fd = 123;
-	bool flg_file = false;
-	///bool flg_dir = false;
 	char* tmp_path;
 	int lenght = strlen(path) - 1;
 	memset(st_buf,0,sizeof(struct stat));
 	tmp_path = (char*)calloc(strlen(path)+1,sizeof(char));
+	//path = fixpath(path);
 	res = stat(path,st_buf);
+	fprintf(2,"saasd12");
 	return res;
-	//struct mbr_data* md = (struct mbr_data *) fuse_get_context ()->private_data;
-	/*if(strcmp(path,"/") == 0)	//in root directory
+
+
+}
+static int pr_fgetattr(const char* path, struct stat* st_buf)
+{
+	int res;
+	res = lstat(path,st_buf);
+	if(res == -1)
+		return -errno;
+	return 0;
+}
+	
+static int pr_access(const char *path, int mask)
+{
+	int res;
+	res = access(path, mask);
+	if (res == -1)
+		return -errno;
+
+	return 0;
+}
+static int xmp_readlink(const char *path, char *buf, size_t size)
+{
+	int res;
+
+	res = readlink(path, buf, size - 1);
+	if (res == -1)
+		return -errno;
+
+	buf[res] = '\0';
+	return 0;
+}
+static inline DIR *get_dirp(struct fuse_file_info *fi)		//return directory pointer
+{
+    return (DIR *) (uintptr_t) fi->fh;
+}
+int pr_opendir(const char *path, struct fuse_file_info *fi)
+{
+	DIR* dp;
+	//path = fixpath(path);
+	dp = opendir(path);
+	if(dp = NULL)
 	{
-		st_buf->st_mode = S_IFDIR | 0755;
-		st_buf->st_nlink = 21;
-		return 0;
+		printf("errr");
+		return -errno;
 	}
-	if(*(path + lenght) != '/')		//set as a file
-	{
-		while(*(path + lenght) != '/')
-		{
-			if(*(path +lenght) == '.')
-			{
-				flg_file = true;
-				break;
-			}
-			lenght--;
-		}
-		if(flg_file)	//this is regular file
-		{
-			st_buf->st_mode = S_IFREG | 0644;
-			st_buf->st_nlink = 5;
-			st_buf->st_size = 13;
-			return 0;
-		}
-		else			//directory with free access
-		{
-			st_buf->st_mode = S_IFDIR | 0666;
-			st_buf->st_nlink = 3; 
-			return 0;
-		}
-	}
-	*/
-	return res;
+	fi->fh = (unsigned long) dp;
+	return 0;		
 }
 static int pr_readdir(const char* path, void* buf, fuse_fill_dir_t filler,off_t offset,struct fuse_file_info* fi)
 {
 	int res = 0;
 	struct stat st;
 	struct dirent* de;
-	DIR* dp = (DIR *)(uintptr_t)fi->fh;
-//	de = readdir(dp);
-	
-	//seekdir(dp, 0);
-	int i = 0;
-	char* buf_t = (char*)calloc(20,sizeof(char));
-	//buf_t = intToChar(buf_t,156);							
-	char* tmp = (char*)calloc(10,sizeof(char));
-	strcpy(tmp,name1);
-//	if(strcmp(path,"/") != 0)		
-//		return -ENOENT;
-	filler(buf,".",NULL,0);
-	filler(buf,"..",NULL,0);
-	filler(buf,path,NULL,0);
-	
-//	readdir
-//	filler(buf,"text.c",NULL,0);
-	//filler(buf,name1+1,NULL,0);
+	DIR* dp = get_dirp(fi);
+	(void)path;
+	seekdir(dp,offset);
+	while((de = readdir(dp)) != NULL)
+	{
+		struct stat st;
+		memset(&st,0,sizeof(st));
+		st.st_ino = de->d_ino;
+		st.st_mode = de->d_type << 12;
+		if(filler(buf,de->d_name,&st,telldir(dp)))
+				break;
+	}
 	return res;
 }
-int pr_opendir(const char *path, struct fuse_file_info *fi)
-{
-	return 0;		
-}
-
-
-
 static struct fuse_operations pr_operations = {
 	.getattr 	= pr_getattr,
-	.readdir	= pr_readdir, 
-	.open		= pr_opendir,
+	.readlink	= xmp_readlink,
+	//.fgetattr	= pr_fgetattr,
+	//.readdir	= pr_readdir, 
+	//.open		= pr_opendir,
+	//.access		= pr_access,
 	};	
-	
-
 int main(int argc,char* argv[])
 {
-	struct BLOCKS blk;
-	DIR* dp;	
-	//strcpy(name1,"/file_create");
-	strcpy(name1,"/ads");	
-	return fuse_main(argc,argv,&pr_operations,NULL);
-	return 0;
+	DIR* dp;
+	int ret;	
+	umask(0);
+	struct fuse_args args;
+	//args = (const struct fuse_args) FUSE_ARGS_INIT (argc,argv);
+	//se = fuse_lowlevel_new (&args,&pr_operations,sizeof(pr_operations),NULL);
+	ret = fuse_main(argc,argv,&pr_operations,NULL);
+	printf("%d",ret);
+	return ret;
 }
 char* intToChar(char* bufer, int numb)
 {
@@ -202,8 +175,3 @@ char* intToChar(char* bufer, int numb)
 	bufer[j] = NULL;
 	return bufer;	
 }
-
-
-
-
-
