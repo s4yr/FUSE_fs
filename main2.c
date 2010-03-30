@@ -38,15 +38,6 @@ struct mbr_data
   char *filename;
  // struct mbr_partition *primary;
 };
-static inline char* fixpath(const char* path)
-{
-    char* fixed=(char*)calloc(strlen(path)+2,sizeof(char));
-
-    strcpy(fixed,".");
-    strcat(fixed,path);
-    return fixed;
-}
-
 static int pr_getattr(const char* path,struct stat* st_buf)		//get attributes about file/directory
 {
 	int res = 0;	//temporary result
