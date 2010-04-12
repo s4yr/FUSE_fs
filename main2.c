@@ -19,7 +19,7 @@ char name2[10];
 static int savefd;
 char* intToChar(char* bufer, int numb);
 static struct fuse_session* se;
-
+//---------get attributes of file or directory------------------
 static int pr_getattr(const char* path,struct stat* st_buf)		//get attributes about file/directory
 {
 	int res;
@@ -29,6 +29,7 @@ static int pr_getattr(const char* path,struct stat* st_buf)		//get attributes ab
 		return -errno;
 	return 0;
 }
+//---------get attributes of file or directory------------------
 static int pr_fgetattr(const char* path, struct stat* st_buf)
 {
 	int res;
@@ -37,7 +38,7 @@ static int pr_fgetattr(const char* path, struct stat* st_buf)
 		return -errno;
 	return 0;
 }
-	
+//--------check a possible access to file or directory-----------	
 static int pr_access(const char *path, int mask)
 {
 	int res;
@@ -46,6 +47,7 @@ static int pr_access(const char *path, int mask)
 		return -errno;
 	return 0;
 }
+
 static int pr_readlink(const char *path, char *buf, size_t size)		//read symbolik link -??????
 {
 	int res;
@@ -56,7 +58,7 @@ static int pr_readlink(const char *path, char *buf, size_t size)		//read symboli
 	buf[res] = '\0';
 	return 0;
 }
-//read content of current directory
+//------------read content of current directory-------------
 static int pr_readdir(const char* path, void* buf, fuse_fill_dir_t filler,off_t offset,struct fuse_file_info* fi)
 {
 	DIR *dp;
@@ -93,9 +95,12 @@ static int my_printf()
 	write(2,"qwert\n",7);
 	return 0;
 }
+//-------create a new dirrectory in fs-------------------
 static int pr_mkdir(const char *path, mode_t mode)
 {
 	int res;
+	char str[10];
+	//gets(str);
 	res = mkdir(path, mode);
 	if (res == -1)
 		return -errno;
@@ -105,7 +110,7 @@ static int pr_mkdir(const char *path, mode_t mode)
 	my_printf();
 	return 0;
 }
-//fuse realization of delete dir
+//----------fuse realization of delete dir-----------------
 static int pr_rmdir(const char *path)
 {
 	int res;
@@ -117,9 +122,8 @@ static int pr_rmdir(const char *path)
 	return 0;
 }
 
-//read file content
-static int pr_read(const char *path, char *buf, size_t size, off_t offset,
-		    struct fuse_file_info *fi)
+//---------------read file content--------------------------
+static int pr_read(const char *path, char *buf, size_t size, off_t offset,struct fuse_file_info *fi)
 {
 	int fd;
 	int res;
@@ -134,7 +138,7 @@ static int pr_read(const char *path, char *buf, size_t size, off_t offset,
 	close(fd);
 	return res;
 }
-//open file
+//---------------------open file----------------------------
 static int pr_open(const char *path, struct fuse_file_info *fi)
 {
 	int res;
@@ -145,9 +149,8 @@ static int pr_open(const char *path, struct fuse_file_info *fi)
 	close(res);
 	return 0;
 }
-//-----------------------------------------------------------
-static int pr_write(const char *path, const char *buf, size_t size,
-		     off_t offset, struct fuse_file_info *fi)
+//----------------------write into file------------------
+static int pr_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
 	int fd;
 	int res;
@@ -156,15 +159,13 @@ static int pr_write(const char *path, const char *buf, size_t size,
 	fd = open(path, O_WRONLY);
 	if (fd == -1)
 		return -errno;
-
 	res = pwrite(fd, buf, size, offset);
 	if (res == -1)
 		res = -errno;
-
 	close(fd);
 	return res;
 }
-
+//---information about mount fs--------------------------
 static int pr_statfs(const char *path, struct statvfs *stbuf)
 {
 	int res;
@@ -172,26 +173,109 @@ static int pr_statfs(const char *path, struct statvfs *stbuf)
 	res = statvfs(path, stbuf);
 	if (res == -1)
 		return -errno;
+	return 0;
+}
+//----- create ordinary file in new filesystem---------
+static int pr_mknod(const char *path, mode_t mode, dev_t rdev)
+{
+	int res;
+	my_printf();
+	if (S_ISREG(mode)) 
+	{
+		res = open(path, O_CREAT | O_EXCL | O_WRONLY, mode);
+		if (res >= 0)
+			res = close(res);
+	} else if (S_ISFIFO(mode))
+		res = mkfifo(path, mode);
+	else
+		res = mknod(path, mode, rdev);
+	if (res == -1)
+		return -errno;
 
 	return 0;
 }
+//-------rename name of file---------------------------
+static int pr_rename(const char *from, const char *to)
+{
+	int res;
+
+	res = rename(from, to);
+	if (res == -1)
+		return -errno;
+
+	return 0;
+}
+//-------create a symbolic link of a file-------------
+static int pr_symlink(const char *from, const char *to)
+{
+	int res;
+	res = symlink(from, to);
+	if (res == -1)
+		return -errno;
+	return 0;
+}
+//------create a hard link of a file------------------
+static int pr_link(const char *from, const char *to)
+{
+	int res;
+
+	res = link(from, to);
+	if (res == -1)
+		return -errno;
+
+	return 0;
+}
+//-----delete name of file-----------------------------
+static int pr_unlink(const char *path)
+{
+	int res;
+
+	res = unlink(path);
+	if (res == -1)
+		return -errno;
+
+	return 0;
+}
+//---truncate a file to size----------------------------
+static int pr_truncate(const char *path, off_t size)
+{
+	int res;
+
+	res = truncate(path, size);
+	if (res == -1)
+		return -errno;
+
+	return 0;
+}
+//-------change file last time file was accessed-----------
+static int pr_utimens(const char *path, const struct timespec ts[2])
+{
+	int res;
+	struct timeval tv[2];
+
+	tv[0].tv_sec = ts[0].tv_sec;
+	tv[0].tv_usec = ts[0].tv_nsec / 1000;
+	tv[1].tv_sec = ts[1].tv_sec;
+	tv[1].tv_usec = ts[1].tv_nsec / 1000;
+
+	res = utimes(path, tv);
+	if (res == -1)
+		return -errno;
+	return 0;
+}
+
 
 static int pr_release(const char *path, struct fuse_file_info *fi)
 {
-	/* Just a stub.	 This method is optional and can safely be left
-	   unimplemented */
 
 	(void) path;
 	(void) fi;
 	return 0;
 }
 
-static int pr_fsync(const char *path, int isdatasync,
-		     struct fuse_file_info *fi)
+static int pr_fsync(const char *path, int isdatasync, struct fuse_file_info *fi)
 {
-	/* Just a stub.	 This method is optional and can safely be left
-	   unimplemented */
-
+	/* can be left */
 	(void) path;
 	(void) isdatasync;
 	(void) fi;
@@ -204,8 +288,17 @@ static struct fuse_operations pr_operations = {
 	.readlink		= pr_readlink,
 	.readdir		= pr_readdir,
 	.mkdir			= pr_mkdir,
+	.mknod			= pr_mknod,
 	.rmdir			= pr_rmdir,
 	.read			= pr_read,
+	.write			= pr_write,
+	.statfs			= pr_statfs,
+	.rename			= pr_rename,
+	.symlink		= pr_symlink,
+	.link			= pr_link,
+	.unlink			= pr_unlink,
+	.truncate		= pr_truncate,
+	.utimens			= pr_utimens,
 	};	
 int main(int argc,char* argv[])
 {
