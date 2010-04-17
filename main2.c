@@ -90,9 +90,9 @@ static int my_printf()
 {
 	size_t len = 20;
 	char *tmp = alloca (len + 2);
-	printf("qwerty\n");
-	write(1,"qwe\n",5);
-	write(2,"qwert\n",7);
+	//printf("qwerty\n");
+	write(1,"inp\n",5);
+	//write(2,"qwert\n",7);
 	return 0;
 }
 //-------create a new dirrectory in fs-------------------
@@ -107,7 +107,7 @@ static int pr_mkdir(const char *path, mode_t mode)
 	FILE* fp = fopen( "/tmp/afuse.log", "w+" );
 	fprintf( fp, "PRINT FROM FUSE: %s\n",path);
 	fclose(fp);
-	my_printf();
+	puts("mkdir");
 	return 0;
 }
 //----------fuse realization of delete dir-----------------
@@ -127,14 +127,15 @@ static int pr_read(const char *path, char *buf, size_t size, off_t offset,struct
 {
 	int fd;
 	int res;
+
 	(void) fi;
 	fd = open(path, O_RDONLY);
 	if (fd == -1)
 		return -errno;
-	offset= 3;
 	res = pread(fd, buf, size, offset);	//read file contenxt
 	if (res == -1)
 		res = -errno;
+
 	close(fd);
 	return res;
 }
@@ -142,10 +143,12 @@ static int pr_read(const char *path, char *buf, size_t size, off_t offset,struct
 static int pr_open(const char *path, struct fuse_file_info *fi)
 {
 	int res;
-
 	res = open(path, fi->flags);
 	if (res == -1)
 		return -errno;
+	write(1,"open\n",6);
+	printf("%s\n",path);
+	
 	close(res);
 	return 0;
 }
@@ -154,18 +157,18 @@ static int pr_write(const char *path, const char *buf, size_t size, off_t offset
 {
 	int fd;
 	int res;
-
 	(void) fi;
 	fd = open(path, O_WRONLY);
 	if (fd == -1)
 		return -errno;
+	puts("write");
 	res = pwrite(fd, buf, size, offset);
 	if (res == -1)
 		res = -errno;
 	close(fd);
 	return res;
 }
-//---information about mount fs--------------------------
+//---information about mount fs--------------------------sed
 static int pr_statfs(const char *path, struct statvfs *stbuf)
 {
 	int res;
@@ -179,7 +182,7 @@ static int pr_statfs(const char *path, struct statvfs *stbuf)
 static int pr_mknod(const char *path, mode_t mode, dev_t rdev)
 {
 	int res;
-	my_printf();
+	puts("mknod");
 	if (S_ISREG(mode)) 
 	{
 		res = open(path, O_CREAT | O_EXCL | O_WRONLY, mode);
@@ -263,8 +266,6 @@ static int pr_utimens(const char *path, const struct timespec ts[2])
 		return -errno;
 	return 0;
 }
-
-
 static int pr_release(const char *path, struct fuse_file_info *fi)
 {
 
@@ -272,7 +273,7 @@ static int pr_release(const char *path, struct fuse_file_info *fi)
 	(void) fi;
 	return 0;
 }
-
+//--write cashe of file on disc---(not realiz)
 static int pr_fsync(const char *path, int isdatasync, struct fuse_file_info *fi)
 {
 	/* can be left */
@@ -281,7 +282,24 @@ static int pr_fsync(const char *path, int isdatasync, struct fuse_file_info *fi)
 	(void) fi;
 	return 0;
 }
-//
+//---change attributes of a file---------------------------
+static int pr_chmod(const char *path, mode_t mode)
+{
+	int res;
+	res = chmod(path, mode);
+	if (res == -1)
+		return -errno;
+	return 0;
+}
+//--change owner of a file-----------------------
+static int pr_chown(const char *path, uid_t uid, gid_t gid)
+{
+	int res;
+	res = lchown(path, uid, gid);
+	if (res == -1)
+		return -errno;
+	return 0;
+}
 static struct fuse_operations pr_operations = {
 	.getattr		= pr_getattr,
 	.access			= pr_access,
@@ -298,7 +316,12 @@ static struct fuse_operations pr_operations = {
 	.link			= pr_link,
 	.unlink			= pr_unlink,
 	.truncate		= pr_truncate,
-	.utimens			= pr_utimens,
+	.utimens		= pr_utimens,
+	.open 			= pr_open,
+	.fsync 			= pr_fsync,
+	.chmod			= pr_chmod,
+	.chown			= pr_chown,
+	.release		= pr_release,
 	};	
 int main(int argc,char* argv[])
 {
