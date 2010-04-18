@@ -95,21 +95,6 @@ static int my_printf()
 	//write(2,"qwert\n",7);
 	return 0;
 }
-//-------create a new dirrectory in fs-------------------
-static int pr_mkdir(const char *path, mode_t mode)
-{
-	int res;
-	char str[10];
-	//gets(str);
-	res = mkdir(path, mode);
-	if (res == -1)
-		return -errno;
-	FILE* fp = fopen( "/tmp/afuse.log", "w+" );
-	fprintf( fp, "PRINT FROM FUSE: %s\n",path);
-	fclose(fp);
-	puts("mkdir");
-	return 0;
-}
 //----------fuse realization of delete dir-----------------
 static int pr_rmdir(const char *path)
 {
@@ -143,13 +128,44 @@ static int pr_read(const char *path, char *buf, size_t size, off_t offset,struct
 static int pr_open(const char *path, struct fuse_file_info *fi)
 {
 	int res;
-	res = open(path, fi->flags);
+	int lenght = 0;
+	char tmp[100];
+	char tmp_sig[100];
+	char* tmp_sig_p;
+	char* tmp_p;
+	char command_create_sig[100];
+	char command_verify_sig[100];
+	//res = open(path, fi->flags);
 	if (res == -1)
 		return -errno;
-	write(1,"open\n",6);
-	printf("%s\n",path);
-	
+	strcpy(tmp,path);		//creating path to file
+	strcpy(tmp_sig,path);
+	tmp_sig_p = strcat(tmp_sig,".sig");	//create a path to signature of selected file
+	strcpy(command_create_sig,"gpg -b ");
+	strcpy(command_verify_sig,"gpg --verify ");
+	write(1,"open ",6);
+	printf("%s flag: %d\n",path,fi->flags);
+	printf("lenght: %d \n",strlen(path));
+	printf("tmp: %s\n",tmp);
+	/*if(strstr(tmp,".c") != NULL)	//check creating of signature
+	{
+		tmp_p = strcat(command_create_sig,tmp);
+		printf("command: %s\n",tmp_p);
+		system(tmp_p);
+		puts("signature was created");
+	}
+	*/
+	if(strstr(tmp,".c") != NULL)
+	{
+		tmp_p = strcat(command_verify_sig,tmp_sig_p);
+		tmp_p = strcat(tmp_p," ");
+		tmp_p = strcat(tmp_p,tmp);
+		printf("check signature: %s\n",tmp_p);
+		system(tmp_p);
+		puts("signature was verrified");
+	}
 	close(res);
+	
 	return 0;
 }
 //----------------------write into file------------------
@@ -168,14 +184,19 @@ static int pr_write(const char *path, const char *buf, size_t size, off_t offset
 	close(fd);
 	return res;
 }
-//---information about mount fs--------------------------sed
-static int pr_statfs(const char *path, struct statvfs *stbuf)
+//-------create a new dirrectory in fs-------------------
+static int pr_mkdir(const char *path, mode_t mode)
 {
 	int res;
-
-	res = statvfs(path, stbuf);
+	char str[10];
+	//gets(str);
+	res = mkdir(path, mode);
 	if (res == -1)
 		return -errno;
+	FILE* fp = fopen( "/tmp/afuse.log", "w+" );
+	fprintf( fp, "PRINT FROM FUSE: %s\n",path);
+	fclose(fp);
+	puts("mkdir");
 	return 0;
 }
 //----- create ordinary file in new filesystem---------
@@ -195,6 +216,16 @@ static int pr_mknod(const char *path, mode_t mode, dev_t rdev)
 	if (res == -1)
 		return -errno;
 
+	return 0;
+}
+//---information about mount fs--------------------------sed
+static int pr_statfs(const char *path, struct statvfs *stbuf)
+{
+	int res;
+
+	res = statvfs(path, stbuf);
+	if (res == -1)
+		return -errno;
 	return 0;
 }
 //-------rename name of file---------------------------
