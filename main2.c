@@ -101,80 +101,7 @@ static int pr_read(const char *path, char *buf, size_t size, off_t offset,struct
 {
 	int fd;
 	int res;
-	char* if_sig_ptr;
-	char* sig_ptr;
-	char* file_ptr;
-	char* dir_ptr;
-	char buff[100];
-	char dir_buf[100];
-	char tmp[100];
-	int i = 0;
-	char sig_st[100];
-//	printf("pr_read\n");
-	dir_ptr = strcpy(dir_buf,path);
-	file_ptr = strcpy(buff,path);
-	sig_ptr = strcat(buff,".sig");
-//	printf("path in read: %s\n",path);
-	//sig_ptr = make_sig_path(buff);
-	if(strstr(path,".c") != NULL)
-	{
-		//create_signature(ctx,file_ptr,NULL);
-		//printf("signature was created\n");
-	}
-	for(i = strlen(dir_ptr) - 1; i > 0; i--)	//get path of current directory
-	{
-		if(*(dir_ptr + i) == '/')
-		{
-			*(dir_ptr + i) = '\0';
-			break;
-		}
-	}
-	//cheking on existing of signature------------
-	DIR* dp;
-	struct dirent* de;
-	dp = opendir(dir_ptr);
-	if(dp == NULL)
-	{
-		printf("err with opendir");
-		return -errno;
-	}
-	while((de = readdir(dp)) != NULL)
-	{
-		strcpy(tmp,dir_ptr);			//copy directory path
-		strcat(tmp,"/");
-		strcat(tmp,de->d_name);
-		if(strcmp(sig_ptr,tmp) == NULL)	//signature of select file exist
-		{
-			printf("signature of file: %s\n",tmp);
-			strcpy(sig_st,verify_signature(ctx,sig_ptr,path));
-			printf("signature was verified status: %s\n",sig_st);	//sig_st contain result of verrification
-			if(strcmp(sig_st,"Success") == NULL)					//correct signature
-			{
-				printf("-------success signature-------\n");
-				fd = open(path, O_RDONLY);
-				if (fd == -1)
-					return -errno;
-				res = pread(fd, buf, size, offset);	//read file contenxt
-				if (res == -1)
-					res = -errno;
-				close(fd);
-				return res;					
-			}
-			else
-			{
-				if(strcmp(sig_st,"Bad signature") == NULL)	//bad signature
-				{
-					printf("-------bad signature-------\n");
-					system("echo sorry,but signature is bad");
-					return -EACCES;					
-				}
-				else{printf("ERROR with verification\n");return -errno;}
-			}
-			break;			 
-		}
-	}
-	closedir(dp);
-	//------end block of checking on existing signature--------
+	//printf("pr_read flg %d,rd: %d wr: %d rdwr: %d\n",fi->flags,O_RDONLY,O_WRONLY,O_RDWR);
 	(void) fi;
 	fd = open(path, O_RDONLY);
 	if (fd == -1)
@@ -195,34 +122,94 @@ static int pr_open(const char *path, struct fuse_file_info *fi)
 	char tmp_sig[100];
 	char* tmp_sig_p;
 	char* tmp_p;
-	char command_create_sig[100];
-	char command_verify_sig[100];
-	printf("pr_open");
+	char* dir_ptr;
+	char buff[100];
+	char dir_buf[100];
+	char sig_st[100];
+	char* if_sig_ptr;
+	char* sig_ptr;
+	char* file_ptr;
+	int fd ,i = 0;
+	FILE* f;
+	gpgme_verify_result_t result;
+	gpgme_signature_t sig;
+	if(fi->flags & O_RDONLY)
+		printf("rd_only\n");
+	if(fi->flags & O_WRONLY)
+		printf("wr_only\n");
+	//printf("flg: %d\n",fi->flags);
+	//printf("pr_open path: %s\n",path);
+	dir_ptr = strcpy(dir_buf,path);
+	file_ptr = strcpy(buff,path);
+	sig_ptr = strcat(buff,".sig");				//path to signature of a file
+	for(i = strlen(dir_ptr) - 1; i > 0; i--)	//get path of current directory
+	{
+		if(*(dir_ptr + i) == '/')
+		{
+			*(dir_ptr + i) = '\0';
+			break;
+		}
+	}
+	//cheking on existing of signature------------
+	DIR* dp;
+	struct dirent* de;
+	dp = opendir(dir_ptr);
+	if(dp == NULL)
+	{
+		printf("err with opendir");
+		return -errno;
+	}
+	while((de = readdir(dp)) != NULL)
+	{
+		strcpy(tmp,dir_ptr);					//copy directory path
+		strcat(tmp,"/");
+		strcat(tmp,de->d_name);
+		if(*(de->d_name) == '.')				//miss file which start with "."(hidden)
+			continue;
+		if(strcmp(sig_ptr,tmp) == NULL)			//signature of select file exist
+		{
+			printf("signature of file: %s\n",tmp);
+			//strcpy(sig_st,verify_signature(ctx,sig_ptr,path));		//get status of verification
+			result = verify_signature(ctx,sig_ptr,path);
+			sig = result->signatures;
+			strcpy(sig_st,gpg_strerror(sig->status));
+			printf("signature was verified status: %s\n",sig_st);	//sig_st contain result of verrification
+			if(strcmp(sig_st,"Success") == NULL)					//correct signature
+			{
+				printf("-------success signature-------\n");
+				res = open(path, fi->flags);
+				if (res == -1)
+					return -errno;
+				close(res);
+				return 0;					
+			}
+			else
+			{
+				if(strcmp(sig_st,"Bad signature") == NULL)	//bad signature
+				{
+					printf("-------bad signature-------\n");
+					system("echo sorry,but signature is bad");
+					f = fopen(path,"a+");
+					if(f == NULL)
+					{
+						printf("error with fopen\n");
+						return -1;
+					}
+					fseek(f,0,SEEK_END);
+					//fwrite("BAD SIGNATURE\n",14,1,f);
+					fclose(f);
+					return 0;					
+				}
+				else{printf("ERROR with verification\n");return -errno;}
+			}
+			break;			 
+		}
+	}
+	closedir(dp);
+	//------end block of checking on existing signature--------
 	res = open(path, fi->flags);
 	if (res == -1)
 		return -errno;
-	
-	strcpy(tmp,path);		//creating path to file
-/*	strcpy(tmp_sig,path);
-	tmp_sig_p = strcat(tmp_sig,".sig");	//create a path to signature of selected file
-	strcpy(command_create_sig,"gpg -b ");
-	strcpy(command_verify_sig,"gpg --verify ");
-	write(1,"open ",6);
-	printf("%s flag: %d\n",path,fi->flags);
-	printf("lenght: %d \n",strlen(path));
-	printf("tmp: %s\n",tmp);
-	*/
-	/*if(strstr(tmp,".c") != NULL)
-	{
-		tmp_p = strcat(command_verify_sig,tmp_sig_p);
-		tmp_p = strcat(tmp_p," ");
-		tmp_p = strcat(tmp_p,tmp);
-		printf("check signature: %s\n",tmp_p);
-		system(tmp_p);
-		puts("signature was verrified");
-	}
-	*/
-	//printf("in open before close path %s\n",path);
 	close(res);
 	return 0;
 }
@@ -232,7 +219,7 @@ static int pr_write(const char *path, const char *buf, size_t size, off_t offset
 	int fd;
 	int res;
 	(void) fi;
-	printf("pr_write");
+	printf("pr_write\n");
 	fd = open(path, O_WRONLY);
 	if (fd == -1)
 		return -errno;
@@ -240,8 +227,9 @@ static int pr_write(const char *path, const char *buf, size_t size, off_t offset
 	if (res == -1)
 		res = -errno;
 	close(fd);
-	//create_signature(ctx,path,NULL);
-	//puts("signature was created");
+	create_signature(ctx,path,NULL);
+	//printf("sign path %s buf: %s\n",path,buf);
+	printf("signature was created");
 	return res;
 }
 //-------create a new dirrectory in fs-------------------
@@ -311,14 +299,11 @@ static int my_printf()
 static int pr_rmdir(const char *path)
 {
 	int res;
-
 	res = rmdir(path);
 	if (res == -1)
 		return -errno;
-
 	return 0;
 }
-
 //-------create a symbolic link of a file-------------
 static int pr_symlink(const char *from, const char *to)
 {
@@ -332,22 +317,18 @@ static int pr_symlink(const char *from, const char *to)
 static int pr_link(const char *from, const char *to)
 {
 	int res;
-
 	res = link(from, to);
 	if (res == -1)
 		return -errno;
-
 	return 0;
 }
 //-----delete name of file-----------------------------
 static int pr_unlink(const char *path)
 {
 	int res;
-
 	res = unlink(path);
 	if (res == -1)
 		return -errno;
-
 	return 0;
 }
 //---truncate a file to size----------------------------
